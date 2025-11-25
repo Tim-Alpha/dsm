@@ -23,6 +23,8 @@ class ZeroconfService {
   private isScanning: boolean = false;
   private callbacks: ZeroconfServiceCallbacks = {};
   private initializationAttempted: boolean = false;
+  private selfServiceIdentifiers: Set<string> = new Set();
+  private selfServiceIdentifierMap: Map<string, Set<string>> = new Map();
 
   constructor() {
     // Don't initialize immediately - wait until first use
@@ -119,8 +121,9 @@ class ZeroconfService {
     });
 
     this.zeroconf!.on('resolved', (service: DiscoveredDevice) => {
-      deviceStore.addDevice(service);
-      this.callbacks.onResolved?.(service);
+      const annotatedService = this.annotateSelfDevice(service);
+      deviceStore.addDevice(annotatedService);
+      this.callbacks.onResolved?.(annotatedService);
     });
 
     this.zeroconf!.on('remove', (name: string) => {
@@ -266,7 +269,9 @@ class ZeroconfService {
       return false;
     }
     try {
-      this.zeroconf!.publishService(type, protocol, domain, name, port, txt);
+      const payload: Record<string, string> = { ...txt, self: 'true' };
+      this.zeroconf!.publishService(type, protocol, domain, name, port, payload);
+      this.registerSelfService(name, type, protocol, domain);
       return true;
     } catch {
       // Native module may not be ready - return false instead of throwing
@@ -284,6 +289,7 @@ class ZeroconfService {
     }
     try {
       this.zeroconf!.unpublishService(name);
+      this.unregisterSelfService(name);
       return true;
     } catch {
       // Native module may not be ready
@@ -300,6 +306,8 @@ class ZeroconfService {
     }
     this.zeroconf!.removeDeviceListeners();
     this.callbacks = {};
+    this.selfServiceIdentifiers.clear();
+    this.selfServiceIdentifierMap.clear();
   }
 
   /**
@@ -310,6 +318,59 @@ class ZeroconfService {
       return;
     }
     this.zeroconf!.addDeviceListeners();
+  }
+
+  /**
+   * Remember identifiers for locally published services so we can mark them later
+   */
+  private registerSelfService(name: string, type: string, protocol: string, domain: string): void {
+    const identifiers = new Set<string>();
+    identifiers.add(name);
+
+    const normalizedType = type.startsWith('_') ? type : `_${type}`;
+    const normalizedProtocol = protocol.startsWith('_') ? protocol : `_${protocol}`;
+    const normalizedDomain = domain.endsWith('.') ? domain : `${domain}.`;
+    const fullName = `${name}.${normalizedType}.${normalizedProtocol}.${normalizedDomain}`;
+
+    identifiers.add(fullName);
+    if (fullName.endsWith('.')) {
+      identifiers.add(fullName.slice(0, -1));
+    }
+
+    identifiers.forEach((identifier) => this.selfServiceIdentifiers.add(identifier));
+    this.selfServiceIdentifierMap.set(name, identifiers);
+  }
+
+  /**
+   * Remove cached identifiers once a service is unpublished
+   */
+  private unregisterSelfService(name: string): void {
+    const identifiers = this.selfServiceIdentifierMap.get(name);
+    if (!identifiers) {
+      return;
+    }
+    identifiers.forEach((identifier) => this.selfServiceIdentifiers.delete(identifier));
+    this.selfServiceIdentifierMap.delete(name);
+  }
+
+  /**
+   * Ensure locally published services stay tagged as "self" even if TXT info is missing
+   */
+  private annotateSelfDevice(service: DiscoveredDevice): DiscoveredDevice {
+    const alreadySelf = service.txt?.self === 'true' || service.isSelf;
+    const matchesIdentifier =
+      this.selfServiceIdentifiers.has(service.name) || this.selfServiceIdentifiers.has(service.fullName);
+
+    if (!alreadySelf && !matchesIdentifier) {
+      return service;
+    }
+
+    const updatedTxt = { ...(service.txt || {}), self: 'true' };
+    return {
+      ...service,
+      isSelf: true,
+      txt: updatedTxt,
+    };
   }
 }
 

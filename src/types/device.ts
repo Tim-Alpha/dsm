@@ -9,6 +9,7 @@ export interface DiscoveredDevice {
   fullName: string;
   port: number;
   txt?: Record<string, string>;
+  isSelf?: boolean;
 }
 
 export interface DeviceDiscoveryState {

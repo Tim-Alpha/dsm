@@ -13,7 +13,7 @@ interface DeviceListProps {
 
 const DeviceList: React.FC<DeviceListProps> = ({ devices, onDevicePress }) => {
   const isSelfDevice = (device: DiscoveredDevice): boolean => {
-    return device.txt?.self === 'true';
+    return device.isSelf === true || device.txt?.self === 'true';
   };
 
   const renderDeviceItem = ({ item }: { item: DiscoveredDevice }) => {
@@ -55,32 +55,34 @@ const DeviceList: React.FC<DeviceListProps> = ({ devices, onDevicePress }) => {
             </View>
           </View>
 
-          <View style={styles.addressContainer}>
-            <Text style={styles.addressLabel}>Network Addresses</Text>
-            <View style={styles.addressChips}>
-              {item.addresses.map((address, index) => (
-                <View key={index} style={styles.addressChip}>
-                  <Text style={styles.addressChipText}>{address}</Text>
-                </View>
-              ))}
-            </View>
-          </View>
-
-          {item.txt && Object.keys(item.txt).length > 0 && (
-            <View style={styles.txtContainer}>
-              <Text style={styles.txtLabel}>Additional Information</Text>
-              <View style={styles.txtItems}>
-                {Object.entries(item.txt)
-                  .filter(([key]) => key !== 'self')
-                  .map(([key, value]) => (
-                    <View key={key} style={styles.txtItemRow}>
-                      <Text style={styles.txtKey}>{key}:</Text>
-                      <Text style={styles.txtValue}>{value}</Text>
-                    </View>
-                  ))}
+          <View style={styles.metaRow}>
+            <View style={[styles.metaColumn, styles.addressContainer]}>
+              <Text style={styles.addressLabel}>Network Address</Text>
+              <View style={styles.addressChips}>
+                {item.addresses.map((address, index) => (
+                  <View key={index} style={styles.addressChip}>
+                    <Text style={styles.addressChipText}>{address}</Text>
+                  </View>
+                ))}
               </View>
             </View>
-          )}
+
+            {item.txt && Object.keys(item.txt).length > 0 && (
+              <View style={[styles.metaColumn, styles.txtContainer]}>
+                <Text style={styles.txtLabel}>Additional Info</Text>
+                <View style={styles.txtItems}>
+                  {Object.entries(item.txt)
+                    .filter(([key]) => key !== 'self')
+                    .map(([key, value]) => (
+                      <View key={key} style={styles.txtItemRow}>
+                        <Text style={styles.txtKey}>{key}:</Text>
+                        <Text style={styles.txtValue}>{value}</Text>
+                      </View>
+                    ))}
+                </View>
+              </View>
+            )}
+          </View>
         </View>
       </TouchableOpacity>
     );
@@ -244,8 +246,15 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#333',
   },
-  addressContainer: {
+  metaRow: {
+    flexDirection: 'row',
+    gap: 16,
     marginTop: 4,
+  },
+  metaColumn: {
+    flex: 1,
+  },
+  addressContainer: {
     marginBottom: 12,
   },
   addressLabel: {
@@ -277,10 +286,9 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   txtContainer: {
-    marginTop: 16,
-    paddingTop: 16,
-    borderTopWidth: 1,
-    borderTopColor: '#E8E8E8',
+    marginBottom: 12,
+    paddingTop: 0,
+    borderTopWidth: 0,
   },
   txtLabel: {
     fontSize: 11,

@@ -22,14 +22,49 @@ class ZeroconfService {
   private zeroconf: Zeroconf | null = null;
   private isScanning: boolean = false;
   private callbacks: ZeroconfServiceCallbacks = {};
+  private initializationAttempted: boolean = false;
 
   constructor() {
+    // Don't initialize immediately - wait until first use
+    // This allows the native module to be fully loaded
+  }
+
+  /**
+   * Initialize zeroconf if not already initialized
+   */
+  private initialize(): boolean {
+    if (this.zeroconf !== null) {
+      return true;
+    }
+
+    if (this.initializationAttempted) {
+      return false;
+    }
+
+    this.initializationAttempted = true;
+
     try {
+      // Check if Zeroconf is available
+      if (typeof Zeroconf === 'undefined' || Zeroconf === null) {
+        console.warn('Zeroconf module is not available. Make sure react-native-zeroconf is installed and linked.');
+        return false;
+      }
+
       this.zeroconf = new Zeroconf();
+      
+      // Test if native module is actually working by checking if methods exist
+      if (typeof this.zeroconf.scan !== 'function') {
+        console.warn('Zeroconf native module methods are not available. The app may need to be rebuilt.');
+        this.zeroconf = null;
+        return false;
+      }
+
       this.setupEventListeners();
+      return true;
     } catch (error) {
       console.error('Failed to initialize Zeroconf:', error);
       this.zeroconf = null;
+      return false;
     }
   }
 
@@ -37,7 +72,27 @@ class ZeroconfService {
    * Check if zeroconf is initialized
    */
   private isInitialized(): boolean {
-    return this.zeroconf !== null;
+    if (this.zeroconf === null) {
+      // Try to initialize if not attempted yet
+      return this.initialize();
+    }
+    return true;
+  }
+
+  /**
+   * Public method to check if zeroconf is initialized and ready
+   */
+  isReady(): boolean {
+    return this.isInitialized();
+  }
+
+  /**
+   * Force re-initialization (useful if native module becomes available later)
+   */
+  reinitialize(): boolean {
+    this.zeroconf = null;
+    this.initializationAttempted = false;
+    return this.initialize();
   }
 
   /**
@@ -94,30 +149,88 @@ class ZeroconfService {
 
   /**
    * Start scanning for devices
+   * Returns true if successful, false otherwise
    */
-  startScan(type: string = 'http', protocol: string = 'tcp', domain: string = 'local.'): void {
+  startScan(type: string = 'http', protocol: string = 'tcp', domain: string = 'local.'): boolean {
+    // Try to initialize if not already done
     if (!this.isInitialized()) {
-      const error = new Error('Zeroconf is not initialized. Please check if the native module is properly linked.');
+      const error = new Error(
+        'Zeroconf native module is not available. Please rebuild the app:\n' +
+        '1. Stop Metro bundler\n' +
+        '2. Run: cd android && ./gradlew clean && cd ..\n' +
+        '3. Run: npm run android (or rebuild in Android Studio)'
+      );
       this.callbacks.onError?.(error);
-      throw error;
+      return false;
     }
 
     if (!this.isScanning) {
-      this.zeroconf!.scan(type, protocol, domain);
+      const zeroconf = this.zeroconf;
+      if (zeroconf === null) {
+        const error = new Error('Zeroconf instance is null');
+        this.callbacks.onError?.(error);
+        return false;
+      }
+
+      try {
+        // Verify the native module is actually working
+        if (typeof zeroconf.scan !== 'function') {
+          throw new Error('Native module methods are not available');
+        }
+        
+        zeroconf.scan(type, protocol, domain);
+        return true;
+      } catch {
+        // Native module may not be ready - try to reinitialize once
+        if (!this.initializationAttempted) {
+          this.zeroconf = null;
+          this.initializationAttempted = false;
+          if (this.initialize()) {
+            const retryZeroconf = this.zeroconf;
+            if (retryZeroconf !== null) {
+              const scanMethod = (retryZeroconf as Zeroconf).scan;
+              if (typeof scanMethod === 'function') {
+                try {
+                  scanMethod.call(retryZeroconf, type, protocol, domain);
+                  return true;
+                } catch {
+                  // Still failing after reinit
+                }
+              }
+            }
+          }
+        }
+        
+        const err = new Error(
+          'Failed to start scan. The native module may not be properly linked.\n' +
+          'Please rebuild the app after installing react-native-zeroconf.'
+        );
+        this.callbacks.onError?.(err);
+        return false;
+      }
     }
+    return true;
   }
 
   /**
    * Stop scanning for devices
+   * Returns true if successful, false otherwise
    */
-  stopScan(): void {
+  stopScan(): boolean {
     if (!this.isInitialized()) {
-      return;
+      return false;
     }
 
     if (this.isScanning) {
-      this.zeroconf!.stop();
+      try {
+        this.zeroconf!.stop();
+        return true;
+      } catch {
+        // Native module may not be ready
+        return false;
+      }
     }
+    return true;
   }
 
   /**
@@ -139,6 +252,7 @@ class ZeroconfService {
 
   /**
    * Publish a service
+   * Returns true if successful, false otherwise
    */
   publishService(
     type: string,
@@ -147,21 +261,34 @@ class ZeroconfService {
     name: string,
     port: number,
     txt: Record<string, string> = {}
-  ): void {
+  ): boolean {
     if (!this.isInitialized()) {
-      throw new Error('Zeroconf is not initialized');
+      return false;
     }
-    this.zeroconf!.publishService(type, protocol, domain, name, port, txt);
+    try {
+      this.zeroconf!.publishService(type, protocol, domain, name, port, txt);
+      return true;
+    } catch {
+      // Native module may not be ready - return false instead of throwing
+      return false;
+    }
   }
 
   /**
    * Unpublish a service
+   * Returns true if successful, false otherwise
    */
-  unpublishService(name: string): void {
+  unpublishService(name: string): boolean {
     if (!this.isInitialized()) {
-      return;
+      return false;
     }
-    this.zeroconf!.unpublishService(name);
+    try {
+      this.zeroconf!.unpublishService(name);
+      return true;
+    } catch {
+      // Native module may not be ready
+      return false;
+    }
   }
 
   /**

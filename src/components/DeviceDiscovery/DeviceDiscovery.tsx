@@ -7,7 +7,6 @@ import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Alert } fr
 import { zeroconfService } from '../../services/zeroconf/ZeroconfService';
 import { deviceStore } from '../../stores/deviceStore';
 import { DiscoveredDevice } from '../../types/device';
-import { createSelfDevice } from '../../utils/deviceInfo';
 import DeviceList from '../DeviceList';
 
 const DeviceDiscovery: React.FC = () => {
@@ -47,37 +46,12 @@ const DeviceDiscovery: React.FC = () => {
       },
     });
 
-    // Add self device to the list
-    const selfDevice = createSelfDevice();
-    deviceStore.addDevice(selfDevice);
-    
-    // Try to publish self as a service so others can discover it
-    try {
-      zeroconfService.publishService(
-        'http',
-        'tcp',
-        'local.',
-        selfDevice.name.replace(/\s+/g, ''),
-        selfDevice.port,
-        selfDevice.txt || {}
-      );
-    } catch {
-      // If publishing fails, that's okay - we still show self in the list
-      console.warn('Failed to publish self service');
-    }
-
     // Initial devices load
     updateDevices();
 
     // Cleanup on unmount
     return () => {
       zeroconfService.stopScan();
-      // Unpublish self service
-      try {
-        zeroconfService.unpublishService(selfDevice.name.replace(/\s+/g, ''));
-      } catch {
-        // Ignore errors during cleanup
-      }
       zeroconfService.cleanup();
     };
   }, [updateDevices]);
@@ -89,17 +63,21 @@ const DeviceDiscovery: React.FC = () => {
     if (isScanning) {
       zeroconfService.stopScan();
     } else {
-      try {
-        deviceStore.clear();
-        // Add self device back after clearing
-        const selfDevice = createSelfDevice();
-        deviceStore.addDevice(selfDevice);
-        updateDevices();
-        zeroconfService.startScan();
-      } catch (err) {
-        const errorMessage = err instanceof Error ? err.message : 'Failed to start scanning';
-        setError(errorMessage);
-        Alert.alert('Scan Error', errorMessage);
+      deviceStore.clear();
+      updateDevices();
+      
+      const success = zeroconfService.startScan();
+      if (!success) {
+        // Error message is already set by the service via callbacks
+        // Just show a user-friendly alert
+        Alert.alert(
+          'Scan Error',
+          'Failed to start scanning. The native module may not be properly linked.\n\n' +
+          'Please rebuild the app:\n' +
+          '1. Stop Metro bundler\n' +
+          '2. Run: ./rebuild-android.sh\n' +
+          'Or manually: cd android && ./gradlew clean && cd .. && npm run android'
+        );
       }
     }
   };

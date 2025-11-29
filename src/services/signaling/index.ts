@@ -1,2 +1,1 @@
-export { signalingService } from './SignalingService';
-
+export { httpSignalingServer } from './HTTPSignalingServer';

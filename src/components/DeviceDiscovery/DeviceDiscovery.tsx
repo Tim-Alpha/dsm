@@ -8,6 +8,7 @@ import { zeroconfService } from '../../services/zeroconf/ZeroconfService';
 import { deviceStore } from '../../stores/deviceStore';
 import { DiscoveredDevice } from '../../types/device';
 import { createSelfDevice } from '../../utils/deviceInfo';
+import { webrtcService } from '../../services/webrtc';
 import DeviceList from '../DeviceList';
 import VideoCall from '../VideoCall';
 
@@ -17,6 +18,7 @@ const DeviceDiscovery: React.FC = () => {
   const [devices, setDevices] = useState<DiscoveredDevice[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [videoCallDevice, setVideoCallDevice] = useState<DiscoveredDevice | null>(null);
+  const [isIncomingCall, setIsIncomingCall] = useState(false);
   const publishedServiceNameRef = useRef<string | null>(null);
 
   /**
@@ -51,6 +53,20 @@ const DeviceDiscovery: React.FC = () => {
       },
     });
 
+    // Setup WebRTC callbacks to detect incoming calls
+    webrtcService.setCallbacks({
+      onCallStateChange: (state) => {
+        if (state === 'ringing' && !videoCallDevice) {
+          // Incoming call detected
+          const remoteDevice = webrtcService.getRemoteDevice();
+          if (remoteDevice) {
+            setVideoCallDevice(remoteDevice);
+            setIsIncomingCall(true);
+          }
+        }
+      },
+    });
+
     // Initial devices load
     updateDevices();
 
@@ -63,7 +79,7 @@ const DeviceDiscovery: React.FC = () => {
       }
       zeroconfService.cleanup();
     };
-  }, [updateDevices]);
+  }, [updateDevices, videoCallDevice]);
 
   /**
    * Handle start/stop scan
@@ -181,6 +197,7 @@ const DeviceDiscovery: React.FC = () => {
    */
   const handleVideoCall = (device: DiscoveredDevice) => {
     setVideoCallDevice(device);
+    setIsIncomingCall(false);
   };
 
   /**
@@ -188,6 +205,7 @@ const DeviceDiscovery: React.FC = () => {
    */
   const handleEndVideoCall = () => {
     setVideoCallDevice(null);
+    setIsIncomingCall(false);
   };
 
   // Show video call UI if call is active
@@ -196,7 +214,7 @@ const DeviceDiscovery: React.FC = () => {
       <VideoCall
         device={videoCallDevice}
         onEndCall={handleEndVideoCall}
-        isIncoming={false}
+        isIncoming={isIncomingCall}
       />
     );
   }

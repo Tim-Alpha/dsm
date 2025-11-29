@@ -9,9 +9,10 @@ import { DiscoveredDevice } from '../../types/device';
 interface DeviceListProps {
   devices: DiscoveredDevice[];
   onDevicePress?: (device: DiscoveredDevice) => void;
+  onVideoCall?: (device: DiscoveredDevice) => void;
 }
 
-const DeviceList: React.FC<DeviceListProps> = ({ devices, onDevicePress }) => {
+const DeviceList: React.FC<DeviceListProps> = ({ devices, onDevicePress, onVideoCall }) => {
   const isSelfDevice = (device: DiscoveredDevice): boolean => {
     return device.isSelf === true || device.txt?.self === 'true';
   };
@@ -54,6 +55,19 @@ const DeviceList: React.FC<DeviceListProps> = ({ devices, onDevicePress }) => {
               <Text style={styles.portText}>{item.port}</Text>
             </View>
           </View>
+
+          {!isSelf && (
+            <View style={styles.actionRow}>
+              <TouchableOpacity
+                style={styles.videoCallButton}
+                onPress={() => onVideoCall?.(item)}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.videoCallIcon}>📹</Text>
+                <Text style={styles.videoCallText}>Video Call</Text>
+              </TouchableOpacity>
+            </View>
+          )}
 
           <View style={styles.metaRow}>
             <View style={[styles.metaColumn, styles.addressContainer]}>
@@ -350,6 +364,39 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 22,
     paddingHorizontal: 32,
+  },
+  actionRow: {
+    marginTop: 12,
+    marginBottom: 8,
+  },
+  videoCallButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#007AFF',
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 10,
+    ...Platform.select({
+      ios: {
+        shadowColor: '#007AFF',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.3,
+        shadowRadius: 4,
+      },
+      android: {
+        elevation: 3,
+      },
+    }),
+  },
+  videoCallIcon: {
+    fontSize: 18,
+    marginRight: 8,
+  },
+  videoCallText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
   },
 });
 

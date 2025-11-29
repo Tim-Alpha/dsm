@@ -9,12 +9,14 @@ import { deviceStore } from '../../stores/deviceStore';
 import { DiscoveredDevice } from '../../types/device';
 import { createSelfDevice } from '../../utils/deviceInfo';
 import DeviceList from '../DeviceList';
+import VideoCall from '../VideoCall';
 
 const DeviceDiscovery: React.FC = () => {
   const [isScanning, setIsScanning] = useState(false);
   const [isPublished, setIsPublished] = useState(false);
   const [devices, setDevices] = useState<DiscoveredDevice[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [videoCallDevice, setVideoCallDevice] = useState<DiscoveredDevice | null>(null);
   const publishedServiceNameRef = useRef<string | null>(null);
 
   /**
@@ -68,10 +70,30 @@ const DeviceDiscovery: React.FC = () => {
    */
   const handleToggleScan = () => {
     if (isScanning) {
+      console.log('[DeviceDiscovery] Stopping scan...');
       zeroconfService.stopScan();
     } else {
+      console.log('[DeviceDiscovery] Starting scan...');
       deviceStore.clear();
       updateDevices();
+      setError(null);
+      
+      // Check if Zeroconf is ready
+      if (!zeroconfService.isReady()) {
+        console.warn('[DeviceDiscovery] Zeroconf not ready, attempting reinitialize...');
+        const reinitSuccess = zeroconfService.reinitialize();
+        if (!reinitSuccess) {
+          Alert.alert(
+            'Scan Error',
+            'Zeroconf service is not available. Please make sure:\n\n' +
+            '1. The app has network permissions\n' +
+            '2. You are connected to a Wi-Fi network\n' +
+            '3. The native module is properly linked\n\n' +
+            'Try rebuilding the app if the issue persists.'
+          );
+          return;
+        }
+      }
       
       const success = zeroconfService.startScan();
       if (!success) {
@@ -82,9 +104,10 @@ const DeviceDiscovery: React.FC = () => {
           'Failed to start scanning. The native module may not be properly linked.\n\n' +
           'Please rebuild the app:\n' +
           '1. Stop Metro bundler\n' +
-          '2. Run: ./rebuild-android.sh\n' +
-          'Or manually: cd android && ./gradlew clean && cd .. && npm run android'
+          '2. Run: cd android && ./gradlew clean && cd .. && npm run android'
         );
+      } else {
+        console.log('[DeviceDiscovery] Scan started successfully');
       }
     }
   };
@@ -153,6 +176,31 @@ const DeviceDiscovery: React.FC = () => {
     );
   };
 
+  /**
+   * Handle video call button press
+   */
+  const handleVideoCall = (device: DiscoveredDevice) => {
+    setVideoCallDevice(device);
+  };
+
+  /**
+   * Handle end video call
+   */
+  const handleEndVideoCall = () => {
+    setVideoCallDevice(null);
+  };
+
+  // Show video call UI if call is active
+  if (videoCallDevice) {
+    return (
+      <VideoCall
+        device={videoCallDevice}
+        onEndCall={handleEndVideoCall}
+        isIncoming={false}
+      />
+    );
+  }
+
   return (
     <View style={styles.container}>
       <View style={styles.header}>
@@ -210,7 +258,11 @@ const DeviceDiscovery: React.FC = () => {
       </View>
 
       <View style={styles.deviceListContainer}>
-        <DeviceList devices={devices} onDevicePress={handleDevicePress} />
+        <DeviceList
+          devices={devices}
+          onDevicePress={handleDevicePress}
+          onVideoCall={handleVideoCall}
+        />
       </View>
     </View>
   );
